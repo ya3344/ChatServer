@@ -33,6 +33,9 @@
     <ClCompile Include="Socket.cpp">
       <Filter>Network</Filter>
     </ClCompile>
+    <ClCompile Include="..\Common\PacketBuffer\PacketBuffer.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -51,6 +54,9 @@
       <Filter>Network</Filter>
     </ClInclude>
     <ClInclude Include="Socket.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\PacketBuffer\PacketBuffer.h">
       <Filter>Network</Filter>
     </ClInclude>
   </ItemGroup>

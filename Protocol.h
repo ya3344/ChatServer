@@ -21,17 +21,16 @@
 //
 //------------------------------------------------------
 
+static constexpr BYTE PACKET_CODE = 0x89;
+
 #pragma pack(push, 1)   
-
-struct st_PACKET_HEADER
+struct HeaderInfo
 {
-	BYTE	byCode;
-	BYTE	byCheckSum;
-
-	WORD	wMsgType;
-	WORD	wPayloadSize;
+	BYTE code = PACKET_CODE;
+	BYTE checkSum = 0;
+	WORD msgType = 0;
+	WORD payLoadSize = 0;
 };
-
 #pragma pack(pop)
 
 
@@ -43,7 +42,10 @@ struct st_PACKET_HEADER
 //
 // WCHAR[15]	: 닉네임 (유니코드)
 //------------------------------------------------------------
-#define df_REQ_LOGIN	1
+
+#define HEADER_CS_LOGIN		1
+#define NICK_NAME_MAX_LEN	15
+
 
 
 

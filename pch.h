@@ -14,7 +14,8 @@
 // STL
 #include <memory>
 #include <iostream>
-
+#include <unordered_map>
+#include <list>
 #pragma comment(lib, "ws2_32")
 #include <winsock2.h>
 #include <stdio.h>

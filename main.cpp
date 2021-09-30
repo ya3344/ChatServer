@@ -9,6 +9,8 @@ int main()
 
     Socket socket;
 
-    if (false == socket.Initialize())
+    if (socket.Initialize() == false)
         return 1;
+
+    socket.ServerProcess();
 }
