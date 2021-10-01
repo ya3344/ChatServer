@@ -11,17 +11,22 @@
 #include "Constant.h"
 #include "Macro.h"
 
-// STL
-#include <memory>
-#include <iostream>
-#include <unordered_map>
-#include <list>
-#pragma comment(lib, "ws2_32")
+
+
+// socket 관련
 #include <winsock2.h>
 #include <stdio.h>
 #include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32")
 
-
+// STL
+#include <memory>
+#include <unordered_map>
+#include <iostream>
+#include <list>
+#include <unordered_set>
+#include <string>
+#include <wchar.h>
 using namespace std;
 
 

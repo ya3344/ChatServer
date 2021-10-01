@@ -7,10 +7,13 @@ int main()
 {
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 
-    Socket socket;
+    Socket* socket;
+    socket = new Socket();
 
-    if (socket.Initialize() == false)
+    if (socket->Initialize() == false)
         return 1;
 
-    socket.ServerProcess();
+    socket->ServerProcess();
+
+    SafeDelete(socket);
 }

@@ -25,5 +25,3 @@ MessageBox(gHWnd, ErrorName, nullptr, MB_OK);
 
 #define CONSOLE_LOG(text) wprintf(L"function:%S %S\n", __FUNCTION__, text)
 #define CONSOLE_ERROR_LOG(text) wprintf(L"[ERROR] function:%S %S\n", __FUNCTION__, text)
-
-#define NODE_INFO_VIEW

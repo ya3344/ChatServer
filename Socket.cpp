@@ -1,14 +1,13 @@
 #include "pch.h"
 #include "Socket.h"
-#include "Protocol.h"
-#include "RingBuffer.h"
-#include "PacketBuffer.h"
+#include "../Common\RingBuffer/RingBuffer.h"
+#include "../Common\PacketBuffer/PacketBuffer.h"
 
 Socket::~Socket()
 {
 	closesocket(mListenSock);
 	WSACleanup();
-	UserDataClear();
+	DataClear();
 	SafeDelete(mPacketBuffer);
 }
 
@@ -73,9 +72,10 @@ bool Socket::Initialize()
 	return true;
 }
 
-void Socket::UserDataClear()
+void Socket::DataClear()
 {
 	ClientInfo* clientInfo = nullptr;
+	RoomInfo* roomInfo = nullptr;
 
 	for (auto userData : mUserData)
 	{
@@ -85,6 +85,13 @@ void Socket::UserDataClear()
 		SafeDelete(clientInfo);
 	}
 	mUserData.clear();
+
+	for (auto roomData : mRoomData)
+	{
+		roomInfo = roomData.second;
+		SafeDelete(roomInfo);
+	}
+	mRoomData.clear();
 }
 
 void Socket::ServerProcess()
@@ -93,7 +100,10 @@ void Socket::ServerProcess()
 	fd_set write_set;
 	ClientInfo* clientInfo = nullptr;
 	BYTE socketCount = 0;
-	list<WORD> userID_Data;
+	vector<DWORD> userID_Data;
+
+	// userid 는 최대 fdsetsize 만큼 들어가기 때문에 미리 메모리 할당 하여 reallocation 방지
+	userID_Data.reserve(FD_SETSIZE);
 
 	while (true)
 	{
@@ -143,7 +153,7 @@ void Socket::ServerProcess()
 	}
 }
 
-void Socket::SelectSocket(fd_set& read_set, fd_set& write_set, const list<WORD>& userID_Data)
+void Socket::SelectSocket(fd_set& read_set, fd_set& write_set, const vector<DWORD>& userID_Data)
 {
 	TIMEVAL timeout;
 	int fdNum;
@@ -179,13 +189,13 @@ void Socket::SelectSocket(fd_set& read_set, fd_set& write_set, const list<WORD>&
 			return;
 		}
 		InetNtop(AF_INET, &clientaddr.sin_addr, clientIP, 16);
-		wprintf(L"\n[TCP SERVER] Client IP: %s Clinet Port:%d\n", clientIP, ntohs(clientaddr.sin_port));
+		wprintf(L"\n[CHAT SERVER] Client IP: %s Clinet Port:%d\n", clientIP, ntohs(clientaddr.sin_port));
 
 		// 소켓 정보 추가
 		AddSessionInfo(clientSock, clientIP, ntohs(clientaddr.sin_port));
 	}
 
-	for (const WORD& userID : userID_Data)
+	for (const DWORD& userID : userID_Data)
 	{
 		auto userData = mUserData.find(userID);
 		if (userData == mUserData.end())
@@ -196,7 +206,6 @@ void Socket::SelectSocket(fd_set& read_set, fd_set& write_set, const list<WORD>&
 
 		clientInfo = userData->second;
 		_ASSERT(clientInfo != nullptr);
-
 		if (FD_ISSET(clientInfo->clientSock, &read_set))
 		{
 			if (returnVal = recv(clientInfo->clientSock, inputData, clientInfo->recvRingBuffer->GetFreeSize(), 0))
@@ -219,29 +228,17 @@ void Socket::SelectSocket(fd_set& read_set, fd_set& write_set, const list<WORD>&
 					continue;
 				}
 				LoadRecvRingBuf(clientInfo);
-				/*		headerType = *(int*)socketInfo->recvBuffer;
-
-						switch (headerType)
-						{
-						case HEADER_STAR_MOVE:
-						{
-							packetStruct = *(PACKET_STRUCT*)socketInfo->recvBuffer;
-							if (true == StarMove(packetStruct))
-							{
-								SendStarMove(i, packetStruct);
-							}
-						}
-						break;
-						default:
-							wprintf(L"default error![%d]", headerType);
-							return;
-						}*/
 			}
 			else
 			{
 				//RemoveSocketInfo(i);
 			}
 		}
+		if (FD_ISSET(clientInfo->clientSock, &write_set))
+		{
+			SendRingBuf(clientInfo);
+		}
+
 	}
 
 }
@@ -263,7 +260,7 @@ void Socket::AddSessionInfo(const SOCKET clientSock, const WCHAR* ip, const WORD
 	mUserData.emplace(clientInfo->userID, clientInfo);
 }
 
-void Socket::LoadRecvRingBuf(const ClientInfo* clientInfo)
+void Socket::LoadRecvRingBuf(ClientInfo* clientInfo)
 {
 	WORD length = 0;
 	DWORD returnVal = 0;
@@ -307,7 +304,7 @@ void Socket::LoadRecvRingBuf(const ClientInfo* clientInfo)
 		// 패킷 버퍼도 버퍼에 직접담은 부분이기 때문에 writepos을 직접 이동시켜준다.
 		mPacketBuffer->MoveWritePos(returnVal);
 
-		if (false == MakeCheckSum(header.checkSum, header.msgType, mPacketBuffer->GetDataSize()))
+		if (header.checkSum != MakeCheckSum(header.msgType, mPacketBuffer->GetDataSize()))
 		{
 			wprintf(L"CheckSum Error! [checksum:%d msgType:%d packetSize:%d]", header.checkSum, header.msgType, mPacketBuffer->GetDataSize());
 			return;
@@ -316,29 +313,49 @@ void Socket::LoadRecvRingBuf(const ClientInfo* clientInfo)
 		clientInfo->recvRingBuffer->MoveReadPos(returnVal);
 
 		PacketProcess(header.msgType, clientInfo);
-
-
-
-		//switch (header.msgType)
-		//{
-		//case HEADER_CS_LOGIN:
-		//	{
-		//		//CreateMyPlayer(outputData);
-		//	}
-		//	break;
-		//default:
-		//	wprintf(L"LoadRecvRingBuf Unkown header[%d]!", header.msgType);
-		//	return;
-		//}
-
 	}
-
-
-	
-
 }
 
-bool Socket::MakeCheckSum(const BYTE checkSum, const WORD msgType, const WORD payLoadSize)
+void Socket::SendRingBuf(const ClientInfo* clientInfo)
+{
+	int retSize = 0;
+	int retVal = 0;
+	bool isUseCount = false;
+	char outputData[RingBuffer::MAX_BUFFER_SIZE] = { 0, };
+
+	if (clientInfo->clientSock == INVALID_SOCKET)
+		return;
+
+	if (clientInfo->sendRingBuffer->GetUseSize() <= 0)
+		return;
+
+	// 보낼 수 있을때까지 보냄
+	retSize = clientInfo->sendRingBuffer->Peek(outputData, clientInfo->sendRingBuffer->GetUseSize());
+	
+	retVal = send(clientInfo->clientSock, outputData, retSize, 0);
+	wprintf(L"send packet size:%d sendRIngBuffer useSize:%d\n", retVal, clientInfo->sendRingBuffer->GetUseSize());
+	if (retVal == SOCKET_ERROR)
+	{
+		if (WSAGetLastError() != WSAEWOULDBLOCK)
+		{
+			wprintf(L"Send() WSAGetLastError [errcode:%d][userID:%d]", WSAGetLastError(), clientInfo->userID);
+			return;
+		}
+		// WSAEWOULDBLOCK 상태이기 때문에 에러는 아니므로 바로 리턴
+		wprintf(L"WSAEWOULDBLOCK [userID:%d]", clientInfo->userID);
+		return;
+	}
+	isUseCount = clientInfo->sendRingBuffer->MoveReadPos(retVal);
+
+	if (isUseCount == false)
+	{
+		wprintf(L"UseCount Underflow Error!");
+		return;
+	}
+	
+}
+
+BYTE Socket::MakeCheckSum(const WORD msgType, const WORD payLoadSize)
 {
 	BYTE* packetBuffer = (BYTE*)mPacketBuffer->GetBufferPtr();
 	WORD checkSumCount = 0;
@@ -349,28 +366,340 @@ bool Socket::MakeCheckSum(const BYTE checkSum, const WORD msgType, const WORD pa
 		packetBuffer++;
 	}
 	checkSumCount += msgType;
-	checkSumCount %= 256;
-	if (checkSum != checkSumCount)
-		return false;
-
-	return true;
+	
+	return checkSumCount %= 256;
 }
 
-void Socket::PacketProcess(const WORD msgType, const ClientInfo* clientInfo)
+void Socket::PacketProcess(const WORD msgType, ClientInfo* clientInfo)
 {
-	char tempNameBuffer[NICK_NAME_MAX_LEN * 2];
-	WCHAR nickNameBuffer[NICK_NAME_MAX_LEN];
-
 	switch (msgType)
 	{
 	case HEADER_CS_LOGIN:
 		{
-			mPacketBuffer->GetData(tempNameBuffer, _countof(tempNameBuffer));
-			wcscpy_s(nickNameBuffer, (WCHAR*)tempNameBuffer);
+			LoginRequest(clientInfo);
+		}
+		break;
+	case HEADER_CS_ROOM_LIST:
+		{
+			RoomList_MakePacket(clientInfo);
+		}
+		break;
+	case HEADER_CS_ROOM_CREATE:
+		{
+			RoomMake(clientInfo);
+		}
+		break;
+	case HEADER_CS_ROOM_ENTER:
+		{
+			RoomEnter(clientInfo);
+		}
+		break;
+	case HEADER_CS_CHAT:
+		{
+			ChatRequest(clientInfo);
 		}
 		break;
 	default:
 		wprintf(L"unknown msgType[%d]", msgType);
 		return;
+	}
+}
+
+void Socket::LoginRequest(ClientInfo* clientInfo)
+{
+	WCHAR nickNameBuffer[NICK_NAME_BUFFER_SIZE];
+	mPacketBuffer->GetData((char*)nickNameBuffer, _countof(nickNameBuffer));
+	
+	if (mNickNameData.size() > 0)
+	{
+		auto iterNameSet = mNickNameData.find(nickNameBuffer);
+		// 중복된 데이터가 있는지 체크
+		if (iterNameSet != mNickNameData.end())
+		{
+			// 로그인 결과 값 전송
+			LoginMakePacket(RESULT_LOGIN_DNICK, clientInfo);
+			return;
+		}
+	}
+
+	// 닉네임 저장
+	mNickNameData.emplace(nickNameBuffer);
+	// clientInfo 정보에 이름 전달
+	wcscpy_s(clientInfo->nickName, nickNameBuffer);
+
+	// 로그인 결과 값 전송
+	LoginMakePacket(RESULT_LOGIN_OK, clientInfo);
+}
+
+
+void Socket::LoginMakePacket(const BYTE resultMsg, const ClientInfo* clientInfo)
+{
+	HeaderInfo header;
+
+	mPacketBuffer->Clear();
+	*mPacketBuffer << resultMsg << clientInfo->userID;
+
+	header.msgType = HEADER_SC_LOGIN;
+	header.code = PACKET_CODE;
+	header.payLoadSize = mPacketBuffer->GetDataSize();
+	header.checkSum = MakeCheckSum(HEADER_SC_LOGIN, header.payLoadSize);
+
+	SendUnicast(clientInfo, &header);
+}
+
+void Socket::RoomList_MakePacket(const ClientInfo* clientInfo)
+{
+	HeaderInfo header;
+	RoomInfo* roomInfo;
+
+	mPacketBuffer->Clear();
+	*mPacketBuffer << (WORD)mRoomData.size();
+
+	for (auto iterRoomData : mRoomData)
+	{
+		roomInfo = iterRoomData.second;
+		_ASSERT(roomInfo != nullptr);
+
+		// 방ID, 방이름 사이즈
+		*mPacketBuffer << roomInfo->roomID << roomInfo->roomTitleSize;
+		mPacketBuffer->PutData((char*)roomInfo->roomTitle, roomInfo->roomTitleSize);
+
+		// 참여인원수
+		*mPacketBuffer << (BYTE)roomInfo->userID_Data.size();
+
+		for (DWORD userID : roomInfo->userID_Data)
+		{
+			auto iterUserData = mUserData.find(userID);
+			if (iterUserData == mUserData.end())
+			{
+				wprintf(L"roominfo userID find error[userID:%d]", userID);
+				mPacketBuffer->Clear();
+				return;
+			}
+			mPacketBuffer->PutData((char*)iterUserData->second->nickName, NICK_NAME_BUFFER_SIZE * 2);
+		}
+	}
+
+	header.msgType = HEADER_SC_ROOM_LIST;
+	header.code = PACKET_CODE;
+	header.payLoadSize = mPacketBuffer->GetDataSize();
+	header.checkSum = MakeCheckSum(HEADER_SC_ROOM_LIST, header.payLoadSize);
+
+	SendUnicast(clientInfo, &header);
+}
+
+void Socket::RoomMake(const ClientInfo* clientInfo)
+{
+	WORD roomTitleSize = 0;
+	RoomInfo* roomInfo = nullptr;
+
+	roomInfo = new RoomInfo;
+	_ASSERT(roomInfo != nullptr);
+
+	*mPacketBuffer >> roomTitleSize;
+	mPacketBuffer->GetData((char*)roomInfo->roomTitle, roomTitleSize);
+
+	if (mRoomData.size() > 0)
+	{
+		for (auto iterRoomData : mRoomData)
+		{
+			if (wcscmp(iterRoomData.second->roomTitle, roomInfo->roomTitle) == 0)
+			{
+				// 방생성 결과 정보 전송
+				RoomMakePacket(RESULT_ROOM_CREATE_DNICK, clientInfo, roomInfo);
+				return;
+			}
+		}
+	}
+	roomInfo->roomTitleSize = roomTitleSize;
+	roomInfo->roomID = ++mRoomIDNum;
+	// 방생성
+	mRoomData.emplace(roomInfo->roomID, roomInfo);
+
+	// 방생성 결과 정보 전송
+	RoomMakePacket(RESULT_ROOM_CREATE_OK, clientInfo, roomInfo);
+}
+
+void Socket::RoomMakePacket(const BYTE resultMsg, const ClientInfo* clientInfo, const RoomInfo* roomInfo)
+{
+	HeaderInfo header;
+
+	mPacketBuffer->Clear();
+	*mPacketBuffer << resultMsg << roomInfo->roomID << roomInfo->roomTitleSize;
+	mPacketBuffer->PutData((char*)roomInfo->roomTitle, roomInfo->roomTitleSize);
+
+	header.code = PACKET_CODE;
+	header.msgType = HEADER_SC_ROOM_CREATE;
+	header.payLoadSize = mPacketBuffer->GetDataSize();
+	header.checkSum = MakeCheckSum(HEADER_SC_ROOM_CREATE, header.payLoadSize);
+	
+	if (resultMsg == RESULT_ROOM_CREATE_OK)
+	{
+		SendBroadcast(&header);
+	}
+	else
+	{
+		SendUnicast(clientInfo, &header);
+	}
+	
+}
+
+void Socket::RoomEnter(ClientInfo* clientInfo)
+{
+	DWORD roomID = 0;
+	RoomInfo* roomInfo = nullptr;
+
+	*mPacketBuffer >> roomID;
+	auto iterRoomData = mRoomData.find(roomID);
+
+	//존재하는 방인지 체크
+	if (iterRoomData == mRoomData.end())
+	{
+		RoomEnterPacket(RESULT_ROOM_ENTER_NOT, clientInfo, roomInfo);
+		return;
+	}
+	roomInfo = iterRoomData->second;
+
+	if (roomInfo->userID_Data.size() >= MAX_ROOM_ENTER_NUM)
+	{
+		RoomEnterPacket(RESULT_ROOM_ENTER_MAX, clientInfo, roomInfo);
+		return;
+	}
+
+
+	// 클라이언트 정보에 방번호 저장
+	clientInfo->roomID = roomInfo->roomID;
+	// 패킷버퍼에 send할 정보가 모두 저장되면 해당 방에 유저ID 저장
+	roomInfo->userID_Data.emplace_back(clientInfo->userID);
+
+	RoomEnterPacket(RESULT_ROOM_ENTER_OK, clientInfo, roomInfo);
+}
+
+void Socket::RoomEnterPacket(const BYTE resultMsg, const ClientInfo* clientInfo, const RoomInfo* roomInfo)
+{
+	HeaderInfo header;
+	mPacketBuffer->Clear();
+	// 결과 정보 전송
+	*mPacketBuffer << resultMsg;
+
+	if (resultMsg == RESULT_ROOM_ENTER_OK)
+	{
+		*mPacketBuffer << roomInfo->roomID << roomInfo->roomTitleSize;
+		mPacketBuffer->PutData((char*)roomInfo->roomTitle, roomInfo->roomTitleSize);
+		*mPacketBuffer << (BYTE)roomInfo->userID_Data.size();
+
+		for (DWORD userID : roomInfo->userID_Data)
+		{
+			auto iterUserData = mUserData.find(userID);
+			if (iterUserData == mUserData.end())
+			{
+				// 유저정보 오류로 오류 결과 전달
+				mPacketBuffer->Clear();
+				wprintf(L"Room Enter UserID find error[userID:%d]", userID);
+				return;
+			}
+			mPacketBuffer->PutData((char*)iterUserData->second->nickName, NICK_NAME_BUFFER_SIZE * 2);
+			*mPacketBuffer << iterUserData->second->userID;
+		}
+
+		header.msgType = HEADER_SC_ROOM_ENTER;
+		header.code = PACKET_CODE;
+		header.payLoadSize = mPacketBuffer->GetDataSize();
+		header.checkSum = MakeCheckSum(header.msgType, header.payLoadSize);
+		SendUnicast(clientInfo, &header);
+		UserEnterPacket(clientInfo, roomInfo);
+	}
+	else
+	{
+		header.msgType = HEADER_SC_ROOM_ENTER;
+		header.code = PACKET_CODE;
+		header.payLoadSize = mPacketBuffer->GetDataSize();
+		header.checkSum = MakeCheckSum(header.msgType, header.payLoadSize);	
+		SendUnicast(clientInfo, &header);
+	}
+}
+
+void Socket::UserEnterPacket(const ClientInfo* clientInfo, const RoomInfo* roomInfo)
+{
+	HeaderInfo header;
+	mPacketBuffer->Clear();
+
+	mPacketBuffer->PutData((char*)clientInfo->nickName, NICK_NAME_BUFFER_SIZE * 2);
+	*mPacketBuffer << clientInfo->userID;
+
+	header.msgType = HEADER_SC_USER_ENTER;
+	header.code = PACKET_CODE;
+	header.payLoadSize = mPacketBuffer->GetDataSize();
+	header.checkSum = MakeCheckSum(header.msgType, header.payLoadSize);
+
+	for (DWORD userID : roomInfo->userID_Data)
+	{
+		auto iterUserData = mUserData.find(userID);
+		if (userID == clientInfo->userID)
+			continue;
+		
+		SendUnicast(iterUserData->second, &header);
+	}
+}
+
+void Socket::ChatRequest(const ClientInfo* clientInfo)
+{
+	WORD chatSize = 0;
+	wstring chatString;
+
+	*mPacketBuffer >> chatSize;
+	mPacketBuffer->GetData((char*)chatString.c_str(), chatSize);
+
+	ChatSendPacket(clientInfo, chatString, chatSize);
+}
+
+void Socket::ChatSendPacket(const ClientInfo* clientInfo, const wstring& chatString, const WORD chatSize)
+{
+	RoomInfo* roomInfo = nullptr;
+	HeaderInfo header;
+	mPacketBuffer->Clear();
+
+	auto iterRoomInfo = mRoomData.find(clientInfo->roomID);
+
+	if (iterRoomInfo == mRoomData.end())
+	{
+		wprintf(L"ChatSendpacket room find error()[roomID:%ld]", clientInfo->roomID);
+		return;
+	}
+	roomInfo = iterRoomInfo->second;
+
+	*mPacketBuffer << clientInfo->userID;							// 송진자 NO
+	*mPacketBuffer << chatSize;										// 채팅 사이즈
+	mPacketBuffer->PutData((char*)chatString.c_str(), chatSize);	// 채팅 내용
+
+	header.msgType = HEADER_SC_CHAT;
+	header.code = PACKET_CODE;
+	header.payLoadSize = mPacketBuffer->GetDataSize();
+	header.checkSum = MakeCheckSum(header.msgType, header.payLoadSize);
+
+	for (DWORD userID : roomInfo->userID_Data)
+	{
+		auto iterUserData = mUserData.find(userID);
+		if (userID == clientInfo->userID)
+			continue;
+
+		SendUnicast(iterUserData->second, &header);
+	}
+}
+
+void Socket::SendUnicast(const ClientInfo* clientInfo, const HeaderInfo* header)
+{
+	clientInfo->sendRingBuffer->Enqueue((char*)header, sizeof(HeaderInfo));
+	clientInfo->sendRingBuffer->Enqueue(mPacketBuffer->GetBufferPtr(), mPacketBuffer->GetDataSize());
+}
+
+void Socket::SendBroadcast(const HeaderInfo* header)
+{
+	ClientInfo* clientInfo = nullptr;
+
+	for (auto iterUserData : mUserData)
+	{
+		clientInfo = iterUserData.second;
+		SendUnicast(clientInfo, header);
 	}
 }

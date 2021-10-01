@@ -43,8 +43,7 @@ struct HeaderInfo
 // WCHAR[15]	: 닉네임 (유니코드)
 //------------------------------------------------------------
 
-#define HEADER_CS_LOGIN		1
-#define NICK_NAME_MAX_LEN	15
+#define HEADER_CS_LOGIN			1
 
 
 
@@ -55,12 +54,12 @@ struct HeaderInfo
 // 1Byte	: 결과 (1:OK / 2:중복닉네임 / 3:사용자초과 / 4:기타오류)
 // 4Byte	: 사용자 NO
 //------------------------------------------------------------
-#define df_RES_LOGIN	2
+#define HEADER_SC_LOGIN			2
 
-#define df_RESULT_LOGIN_OK		1
-#define df_RESULT_LOGIN_DNICK	2
-#define df_RESULT_LOGIN_MAX		3
-#define df_RESULT_LOGIN_ETC		4
+#define RESULT_LOGIN_OK			1
+#define RESULT_LOGIN_DNICK		2
+#define RESULT_LOGIN_MAX		3
+#define RESULT_LOGIN_ETC		4
 
 
 
@@ -72,7 +71,7 @@ struct HeaderInfo
 //
 //	None
 //------------------------------------------------------------
-#define df_REQ_ROOM_LIST	3
+#define HEADER_CS_ROOM_LIST		3
 
 
 //------------------------------------------------------------
@@ -91,7 +90,7 @@ struct HeaderInfo
 //	
 //	}
 //------------------------------------------------------------
-#define df_RES_ROOM_LIST	4
+#define HEADER_SC_ROOM_LIST		4
 
 
 
@@ -101,7 +100,7 @@ struct HeaderInfo
 // 2Byte : 방제목 Size			유니코드 문자 바이트 길이 (널 제외)
 // Size  : 방제목 (유니코드)
 //------------------------------------------------------------
-#define df_REQ_ROOM_CREATE	5
+#define HEADER_CS_ROOM_CREATE	5
 
 
 
@@ -115,12 +114,12 @@ struct HeaderInfo
 // 2Byte : 방제목 바이트 Size
 // Size  : 방제목 (유니코드)
 //------------------------------------------------------------
-#define df_RES_ROOM_CREATE	6
+#define HEADER_SC_ROOM_CREATE			6
 
-#define df_RESULT_ROOM_CREATE_OK		1
-#define df_RESULT_ROOM_CREATE_DNICK	2
-#define df_RESULT_ROOM_CREATE_MAX		3
-#define df_RESULT_ROOM_CREATE_ETC		4
+#define RESULT_ROOM_CREATE_OK			1
+#define RESULT_ROOM_CREATE_DNICK		2
+#define RESULT_ROOM_CREATE_MAX			3
+#define RESULT_ROOM_CREATE_ETC			4
 
 
 
@@ -129,7 +128,7 @@ struct HeaderInfo
 //
 //	4Byte : 방 No
 //------------------------------------------------------------
-#define df_REQ_ROOM_ENTER		7
+#define HEADER_CS_ROOM_ENTER		7
 
 
 //------------------------------------------------------------
@@ -150,12 +149,12 @@ struct HeaderInfo
 //		}
 //	}
 //------------------------------------------------------------
-#define df_RES_ROOM_ENTER		8
+#define HEADER_SC_ROOM_ENTER			8
 
-#define df_RESULT_ROOM_ENTER_OK			1
-#define df_RESULT_ROOM_ENTER_NOT		2
-#define df_RESULT_ROOM_ENTER_MAX		3
-#define df_RESULT_ROOM_ENTER_ETC		4
+#define RESULT_ROOM_ENTER_OK			1
+#define RESULT_ROOM_ENTER_NOT			2
+#define RESULT_ROOM_ENTER_MAX			3
+#define RESULT_ROOM_ENTER_ETC			4
 
 
 //------------------------------------------------------------
@@ -164,7 +163,7 @@ struct HeaderInfo
 // 2Byte : 메시지 Size
 // Size  : 대화내용(유니코드)
 //------------------------------------------------------------
-#define df_REQ_CHAT				9
+#define HEADER_CS_CHAT					9
 
 //------------------------------------------------------------
 // 10 Res 채팅수신 (아무때나 올 수 있음)  (나에겐 오지 않음)
@@ -174,7 +173,7 @@ struct HeaderInfo
 // 2Byte : 메시지 Size
 // Size  : 대화내용(유니코드)
 //------------------------------------------------------------
-#define df_RES_CHAT				10
+#define HEADER_SC_CHAT				10
 
 //------------------------------------------------------------
 // 11 Req 방퇴장 
@@ -206,4 +205,4 @@ struct HeaderInfo
 // WCHAR[15] : 닉네임(유니코드)
 // 4Byte : 사용자 No
 //------------------------------------------------------------
-#define df_RES_USER_ENTER		14
+#define HEADER_SC_USER_ENTER	 14
