@@ -46,7 +46,8 @@ public:
 private:
 	void DataClear();
 	void SelectSocket(fd_set& read_set, fd_set& write_set, const vector<DWORD>& userID_Data);
-	void AddSessionInfo(const SOCKET clientSock, const WCHAR* ip, const WORD port);
+	void AddClientInfo(const SOCKET clientSock, const WCHAR* ip, const WORD port);
+	void RemoveClientInfo(ClientInfo* clientInfo);
 	void LoadRecvRingBuf(ClientInfo* clientInfo);
 	void SendRingBuf(const ClientInfo* clientInfo);
 	BYTE MakeCheckSum(const WORD msgType, const WORD payLoadSize);
@@ -64,7 +65,10 @@ private:
 	void UserEnterPacket(const ClientInfo* clientInfo, const RoomInfo* roomInfo);
 	void ChatRequest(const ClientInfo* clientInfo);
 	void ChatSendPacket(const ClientInfo* clientInfo, const wstring& chatString, const WORD chatSize);
-	
+	void RoomLeave(ClientInfo* clientInfo);
+	void RoomDelete(const DWORD roomID);
+	void EchoRequestTest(const ClientInfo* clientInfo);
+	void EchoMakePacket(const ClientInfo* clientInfo, const char* chatString, const WORD chatSize);
 //Send RingBuffer Related Function
 private:
 	void SendUnicast(const ClientInfo* clientInfo, const HeaderInfo* header);
@@ -78,5 +82,6 @@ private:
 	unordered_map<DWORD, RoomInfo*> mRoomData;
 	unordered_set<wstring> mNickNameData;
 	class PacketBuffer* mPacketBuffer = nullptr;
+	char* mStressString = nullptr;
 };
 
