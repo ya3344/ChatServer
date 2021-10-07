@@ -70,6 +70,7 @@ bool Socket::Initialize()
 	_ASSERT(mPacketBuffer != nullptr);
 	mPacketBuffer->Initialize();
 
+	// StressBuffer 할당
 	mStressString = new char[1000];
 	return true;
 }
@@ -82,6 +83,7 @@ void Socket::DataClear()
 	for (auto userData : mUserData)
 	{
 		clientInfo = userData.second;
+		closesocket(clientInfo->clientSock);
 		SafeDelete(clientInfo->recvRingBuffer);
 		SafeDelete(clientInfo->sendRingBuffer);
 		SafeDelete(clientInfo);
@@ -94,9 +96,11 @@ void Socket::DataClear()
 		SafeDelete(roomInfo);
 	}
 	mRoomData.clear();
+
+	mNickNameData.clear();
 }
 
-void Socket::ServerProcess()
+bool Socket::ServerProcess()
 {
 	fd_set read_set;
 	fd_set write_set;
@@ -153,6 +157,8 @@ void Socket::ServerProcess()
 		// 64개 미만인 select 실행
 		SelectSocket(read_set, write_set, userID_Data);
 	}
+
+	return false;
 }
 
 void Socket::SelectSocket(fd_set& read_set, fd_set& write_set, const vector<DWORD>& userID_Data)
@@ -166,6 +172,7 @@ void Socket::SelectSocket(fd_set& read_set, fd_set& write_set, const vector<DWOR
 	SOCKADDR_IN clientaddr;
 	char inputData[RingBuffer::MAX_BUFFER_SIZE] = { 0, };
 	ClientInfo* clientInfo = nullptr;
+	bool isWritePos = false;
 
 	// select 즉시 리턴
 	timeout.tv_sec = 0;
@@ -203,14 +210,14 @@ void Socket::SelectSocket(fd_set& read_set, fd_set& write_set, const vector<DWOR
 		if (userData == mUserData.end())
 		{
 			wprintf(L"userId find error[userID:%d]\n", userID);
-			return;
+			continue;
 		}
 
 		clientInfo = userData->second;
 		_ASSERT(clientInfo != nullptr);
 		if (FD_ISSET(clientInfo->clientSock, &read_set))
 		{
-			if (returnVal = recv(clientInfo->clientSock, inputData, clientInfo->recvRingBuffer->GetFreeSize(), 0))
+			if (returnVal = recv(clientInfo->clientSock, /*inputData*/ clientInfo->recvRingBuffer->GetBufferPtr(), clientInfo->recvRingBuffer->GetNotBroken_WriteSize(), 0))
 			{
 				wprintf(L"recv packet size:%d\n", returnVal);
 
@@ -230,7 +237,8 @@ void Socket::SelectSocket(fd_set& read_set, fd_set& write_set, const vector<DWOR
 	
 				}
 
-				returnVal = clientInfo->recvRingBuffer->Enqueue(inputData, returnVal);
+				//returnVal = clientInfo->recvRingBuffer->Enqueue(inputData, returnVal);
+				returnVal = clientInfo->recvRingBuffer->MoveWritePos(returnVal);
 				if (returnVal == RingBuffer::USE_COUNT_OVER_FLOW)
 				{
 					wprintf(L"recv enqueue USE_COUNT_OVER_FLOW returnVal[%d]", returnVal);
@@ -240,7 +248,8 @@ void Socket::SelectSocket(fd_set& read_set, fd_set& write_set, const vector<DWOR
 			}
 			else
 			{
-				int a = 0;
+				RemoveClientInfo(clientInfo);
+				continue;
 			}
 		}
 		if (FD_ISSET(clientInfo->clientSock, &write_set))
@@ -296,7 +305,6 @@ void Socket::RemoveClientInfo(ClientInfo* clientInfo)
 
 	mUserData.erase(userData);
 	--mUserIDNum;
-	return;
 }
 
 void Socket::LoadRecvRingBuf(ClientInfo* clientInfo)
@@ -359,7 +367,6 @@ void Socket::SendRingBuf(const ClientInfo* clientInfo)
 {
 	int retSize = 0;
 	int retVal = 0;
-	bool isUseCount = false;
 	char outputData[RingBuffer::MAX_BUFFER_SIZE] = { 0, };
 
 	if (clientInfo->clientSock == INVALID_SOCKET)
@@ -384,11 +391,11 @@ void Socket::SendRingBuf(const ClientInfo* clientInfo)
 		wprintf(L"WSAEWOULDBLOCK [userID:%d]", clientInfo->userID);
 		return;
 	}
-	isUseCount = clientInfo->sendRingBuffer->MoveReadPos(retVal);
+	retVal = clientInfo->sendRingBuffer->MoveReadPos(retVal);
 
-	if (isUseCount == false)
+	if (retVal == RingBuffer::USE_COUNT_UNDER_FLOW)
 	{
-		wprintf(L"UseCount Underflow Error!");
+		wprintf(L"UseCount Underflow Error!\n");
 		return;
 	}
 	
@@ -783,6 +790,7 @@ void Socket::RoomLeave(ClientInfo* clientInfo)
 				RoomDelete(clientInfo->roomID);
 				SafeDelete(roomInfo);
 				mRoomData.erase(iterRommData);
+				return;
 			}
 			// clientInfo 정보에서 roomID 0으로 초기화 진행(추후 꼬이는 문제 방지)
 			clientInfo->roomID = 0; 		
@@ -816,16 +824,16 @@ void Socket::EchoRequestTest(const ClientInfo* clientInfo)
 
 	mPacketBuffer->GetData(mStressString, chatSize);
 
-	EchoMakePacket(clientInfo, mStressString, chatSize);
+	EchoMakePacket(clientInfo, chatSize);
 }
 
-void Socket::EchoMakePacket(const ClientInfo* clientInfo, const char* chatString, const WORD chatSize)
+void Socket::EchoMakePacket(const ClientInfo* clientInfo, const WORD chatSize)
 {
 	HeaderInfo header;
 	mPacketBuffer->Clear();
 
 	*mPacketBuffer << chatSize;										// 채팅 사이즈
-	mPacketBuffer->PutData((char*)chatString, chatSize);	// 채팅 내용
+	mPacketBuffer->PutData(mStressString, chatSize);	// 채팅 내용
 
 	header.msgType = HEADER_SC_STRESS_ECHO;
 	header.code = PACKET_CODE;

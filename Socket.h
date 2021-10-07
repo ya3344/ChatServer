@@ -41,7 +41,7 @@ public:
 
 public:
 	bool Initialize();
-	void ServerProcess();
+	bool ServerProcess();
 
 private:
 	void DataClear();
@@ -68,7 +68,7 @@ private:
 	void RoomLeave(ClientInfo* clientInfo);
 	void RoomDelete(const DWORD roomID);
 	void EchoRequestTest(const ClientInfo* clientInfo);
-	void EchoMakePacket(const ClientInfo* clientInfo, const char* chatString, const WORD chatSize);
+	void EchoMakePacket(const ClientInfo* clientInfo, const WORD chatSize);
 //Send RingBuffer Related Function
 private:
 	void SendUnicast(const ClientInfo* clientInfo, const HeaderInfo* header);

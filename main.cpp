@@ -3,17 +3,22 @@
 
 #include "pch.h"
 #include "Socket.h"
+
+Socket gSocket;
 int main()
 {
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 
-    Socket* socket;
-    socket = new Socket();
 
-    if (socket->Initialize() == false)
-        return 1;
+   // socket = new Socket();
 
-    socket->ServerProcess();
+    if (gSocket.Initialize() == false)
+        return EXIT_FAILURE;
 
-    SafeDelete(socket);
+    if (gSocket.ServerProcess() == false)
+        return EXIT_FAILURE;
+
+    //SafeDelete(gSocket);
+
+    return EXIT_SUCCESS;
 }
