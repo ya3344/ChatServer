@@ -170,7 +170,6 @@ void Socket::SelectSocket(fd_set& read_set, fd_set& write_set, const vector<DWOR
 	SOCKET clientSock = INVALID_SOCKET;
 	WCHAR clientIP[IP_BUFFER_SIZE] = { 0, };
 	SOCKADDR_IN clientaddr;
-	char inputData[RingBuffer::MAX_BUFFER_SIZE] = { 0, };
 	ClientInfo* clientInfo = nullptr;
 	bool isWritePos = false;
 
@@ -217,7 +216,7 @@ void Socket::SelectSocket(fd_set& read_set, fd_set& write_set, const vector<DWOR
 		_ASSERT(clientInfo != nullptr);
 		if (FD_ISSET(clientInfo->clientSock, &read_set))
 		{
-			if (returnVal = recv(clientInfo->clientSock, /*inputData*/ clientInfo->recvRingBuffer->GetBufferPtr(), clientInfo->recvRingBuffer->GetNotBroken_WriteSize(), 0))
+			if (returnVal = recv(clientInfo->clientSock, clientInfo->recvRingBuffer->GetBufferPtr(), clientInfo->recvRingBuffer->GetNotBroken_WriteSize(), 0))
 			{
 				wprintf(L"recv packet size:%d\n", returnVal);
 
@@ -297,14 +296,21 @@ void Socket::RemoveClientInfo(ClientInfo* clientInfo)
 	}
 	mNickNameData.erase(iterNameSet);
 
-	auto userData = mUserData.find(userID);
 	closesocket(clientInfo->clientSock);
 	SafeDelete(clientInfo->recvRingBuffer);
 	SafeDelete(clientInfo->sendRingBuffer);
 	SafeDelete(clientInfo);
-
-	mUserData.erase(userData);
 	--mUserIDNum;
+
+	// 유저 데이터 삭제
+	auto userData = mUserData.find(userID);
+	if (userData == mUserData.end())
+	{
+		wprintf(L"RemoveClientInfo userData find error!");
+		return;
+	}
+	mUserData.erase(userData);
+
 }
 
 void Socket::LoadRecvRingBuf(ClientInfo* clientInfo)
